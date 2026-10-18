@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">Smart IR Remote</string>
+    <string name="desc_ir_blaster">Infrared Transmitter</string>
+    <string name="desc_power">Power Button</string>
+    <string name="desc_vol_up">Volume Up</string>
+    <string name="desc_vol_down">Volume Down</string>
+    <string name="desc_ch_up">Channel Up</string>
+    <string name="desc_ch_down">Channel Down</string>
+    <string name="desc_mute">Mute Audio</string>
+    <string name="desc_speed">Fan Speed</string>
+    <string name="desc_swing">Oscillation Swing</string>
+    <string name="desc_timer">Sleep Timer</string>
+</resources>

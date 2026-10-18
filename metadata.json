@@ -1,0 +1,6 @@
+{
+  "name": "Smart IR Remote",
+  "description": "Infrared (IR) Remote Control application for household appliances and fans targeting Xiaomi Redmi Note 12 Pro (HyperOS).",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
