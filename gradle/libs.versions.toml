@@ -15,6 +15,7 @@ moshi = "1.15.2"
 coroutines = "1.9.0"
 robolectric = "4.13"
 room = "2.6.1"
+securityCrypto = "1.0.0"
 ksp = "2.0.21-1.0.28"
 
 [libraries]
@@ -46,6 +47,7 @@ moshi = { group = "com.squareup.moshi", name = "moshi", version.ref = "moshi" }
 moshi-kotlin = { group = "com.squareup.moshi", name = "moshi-kotlin", version.ref = "moshi" }
 kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
 robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
+androidx-security-crypto = { group = "androidx.security", name = "security-crypto", version.ref = "securityCrypto" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

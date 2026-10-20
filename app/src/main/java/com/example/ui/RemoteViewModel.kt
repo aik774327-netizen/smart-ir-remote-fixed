@@ -3,6 +3,7 @@ package com.example.ui
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.data.api.ApiKeyUtils
 import com.example.data.api.GeminiClientProvider
 import com.example.domain.model.ApplianceProfile
 import com.example.domain.model.ApplianceType
@@ -157,14 +158,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun updateMaskedApiKey() {
         val key = GeminiClientProvider.getApiKey()
-        val masked = if (key.length >= 10) {
-            "${key.take(4)}••••••••${key.takeLast(4)}"
-        } else if (key.isNotBlank()) {
-            "••••••••"
-        } else {
-            "Not Configured"
-        }
-        _uiState.update { it.copy(currentApiKeyMasked = masked) }
+        _uiState.update { it.copy(currentApiKeyMasked = ApiKeyUtils.mask(key)) }
     }
 
     fun selectApplianceType(type: ApplianceType) {
@@ -403,7 +397,7 @@ class RemoteViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun testAndSaveApiKey(newKey: String) {
-        val sanitized = newKey.trim().removeSurrounding("\"").removeSurrounding("'").filterNot { it.isWhitespace() }
+        val sanitized = ApiKeyUtils.sanitize(newKey)
         _uiState.update {
             it.copy(
                 isAiLoading = true,

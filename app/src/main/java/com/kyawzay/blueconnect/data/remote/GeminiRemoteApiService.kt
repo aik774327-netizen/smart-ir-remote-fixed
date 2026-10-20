@@ -14,27 +14,27 @@ import java.net.URL
  * This is a duplicate of com.example.data.api.GeminiRemoteApiService.
  * Prefer the Retrofit-based implementation in com.example.data.api for new code.
  *
- * SECURITY NOTE: The API key is passed as a URL query parameter (required by
- * Gemini API). Ensure the full URL is NEVER logged. This implementation does
- * not log URLs, but avoid adding logging of the endpoint variable.
+ * SECURITY NOTE: The API key is sent in the `x-goog-api-key` header, never
+ * in the URL (URLs leak into logs/proxies). Never log the key value itself.
  */
 class GeminiRemoteApiService(private val apiKey: String) {
 
     private val tag = "GeminiRemoteApi"
 
     suspend fun findIrProtocolFromAi(brand: String, model: String, button: String): String? = withContext(Dispatchers.IO) {
-        val cleanKey = apiKey.trim().removeSurrounding("\"").removeSurrounding("'").filterNot { it.isWhitespace() }
+        val cleanKey = com.example.data.api.ApiKeyUtils.sanitize(apiKey)
         if (cleanKey.isBlank()) {
             Log.e(tag, "Gemini API Key is empty")
             return@withContext null
         }
 
         try {
-            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-live:generateContent?key=$cleanKey"
+            val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-live:generateContent"
             val url = URL(endpoint)
             val conn = url.openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
             conn.setRequestProperty("Content-Type", "application/json")
+            conn.setRequestProperty("x-goog-api-key", cleanKey)
             conn.connectTimeout = 25000
             conn.readTimeout = 25000
             conn.doOutput = true

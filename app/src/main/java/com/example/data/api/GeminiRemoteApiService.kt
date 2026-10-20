@@ -1,6 +1,8 @@
 package com.example.data.api
 
 import android.util.Log
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 import com.example.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
@@ -13,8 +15,8 @@ import org.json.JSONObject
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import retrofit2.http.Body
+import retrofit2.http.Header
 import retrofit2.http.POST
-import retrofit2.http.Query
 import java.util.concurrent.TimeUnit
 
 data class GeminiPart(
@@ -43,7 +45,8 @@ data class GeminiContentResponse(
 interface GeminiApiService {
     @POST("v1beta/models/gemini-3.8-live:generateContent")
     suspend fun generateContent(
-        @Query("key") apiKey: String,
+        // Key travels in a header, never in the URL (URLs leak into logs/proxies).
+        @Header("x-goog-api-key") apiKey: String,
         @Body request: GeminiContentRequest
     ): GeminiContentResponse
 }
@@ -61,6 +64,8 @@ object GeminiClientProvider {
     private val okHttpClient: OkHttpClient by lazy {
         val logging = HttpLoggingInterceptor().apply {
             level = HttpLoggingInterceptor.Level.BASIC
+            // Defense in depth: never print the API key header at any level.
+            redactHeader("x-goog-api-key")
         }
         OkHttpClient.Builder()
             .addInterceptor(logging)
@@ -79,22 +84,88 @@ object GeminiClientProvider {
             .create(GeminiApiService::class.java)
     }
 
+    private const val TAG = "GeminiClientProvider"
+    private const val PREFS_NAME = "smart_remote_prefs"
+    private const val SECURE_PREFS_NAME = "smart_remote_secure_prefs"
+    private const val KEY_API_KEY = "gemini_api_key"
+
     @Volatile
     private var runtimeApiKey: String? = null
     private var prefs: android.content.SharedPreferences? = null
+    private var securePrefs: android.content.SharedPreferences? = null
 
     fun init(context: android.content.Context) {
-        prefs = context.applicationContext.getSharedPreferences("smart_remote_prefs", android.content.Context.MODE_PRIVATE)
-        val saved = prefs?.getString("gemini_api_key", null)
+        val appContext = context.applicationContext
+        prefs = appContext.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
+        securePrefs = try {
+            val masterKey = MasterKey.Builder(appContext)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                appContext,
+                SECURE_PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        } catch (e: Exception) {
+            // Keystore failure on some devices must never crash the app;
+            // plain prefs remain as the fallback store in that case only.
+            Log.e(TAG, "Encrypted storage unavailable, using plain prefs fallback", e)
+            null
+        }
+
+        // Migration: move a legacy plain-text key into encrypted storage,
+        // then delete the plain-text copy.
+        val legacy = prefs?.getString(KEY_API_KEY, null)
+        if (!legacy.isNullOrBlank() && securePrefs != null) {
+            try {
+                if (securePrefs?.getString(KEY_API_KEY, null).isNullOrBlank()) {
+                    securePrefs?.edit()?.putString(KEY_API_KEY, legacy)?.apply()
+                }
+                prefs?.edit()?.remove(KEY_API_KEY)?.apply()
+            } catch (e: Exception) {
+                Log.e(TAG, "API key migration failed", e)
+            }
+        }
+
+        val saved = readStoredKey()
         if (!saved.isNullOrBlank()) {
             runtimeApiKey = saved
         }
     }
 
+    private fun readStoredKey(): String? {
+        val secure = securePrefs
+        if (secure != null) {
+            return try {
+                secure.getString(KEY_API_KEY, null)
+            } catch (e: Exception) {
+                Log.e(TAG, "Encrypted read failed", e)
+                null
+            }
+        }
+        // Plain fallback is read only when encryption is unavailable.
+        return prefs?.getString(KEY_API_KEY, null)
+    }
+
+    private fun writeStoredKey(key: String) {
+        val secure = securePrefs
+        if (secure != null) {
+            try {
+                secure.edit().putString(KEY_API_KEY, key).apply()
+                return
+            } catch (e: Exception) {
+                Log.e(TAG, "Encrypted save failed, using plain prefs fallback", e)
+            }
+        }
+        prefs?.edit()?.putString(KEY_API_KEY, key)?.apply()
+    }
+
     fun setRuntimeApiKey(key: String) {
-        val sanitized = key.trim().removeSurrounding("\"").removeSurrounding("'").filterNot { it.isWhitespace() }
+        val sanitized = ApiKeyUtils.sanitize(key)
         runtimeApiKey = sanitized
-        prefs?.edit()?.putString("gemini_api_key", sanitized)?.apply()
+        writeStoredKey(sanitized)
     }
 
     fun getApiKey(): String {
@@ -102,14 +173,14 @@ object GeminiClientProvider {
         if (!override.isNullOrBlank()) {
             return override
         }
-        val fromPrefs = prefs?.getString("gemini_api_key", null)
-        if (!fromPrefs.isNullOrBlank()) {
-            runtimeApiKey = fromPrefs
-            return fromPrefs
+        val stored = readStoredKey()
+        if (!stored.isNullOrBlank()) {
+            runtimeApiKey = stored
+            return stored
         }
         return try {
             val key = BuildConfig.GEMINI_API_KEY
-            if (key == "MY_GEMINI_API_KEY" || key.isBlank()) "" else key
+            if (ApiKeyUtils.isPlaceholderOrBlank(key)) "" else key
         } catch (_: Exception) {
             ""
         }
@@ -171,7 +242,7 @@ object GeminiClientProvider {
     }
 
     suspend fun validateApiKey(keyToTest: String? = null): Result<String> = withContext(Dispatchers.IO) {
-        val key = keyToTest?.trim()?.removeSurrounding("\"")?.removeSurrounding("'")?.filterNot { it.isWhitespace() }?.ifBlank { null } ?: getApiKey()
+        val key = keyToTest?.let { ApiKeyUtils.sanitize(it) }?.ifBlank { null } ?: getApiKey()
 
         if (key.isBlank()) {
             return@withContext Result.failure(IllegalArgumentException("API Key ကွက်လပ်ဖြစ်နေပါသည် (Please enter API Key)"))
