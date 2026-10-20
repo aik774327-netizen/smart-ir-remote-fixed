@@ -2,7 +2,7 @@ package com.example.data.api
 
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
-import androidx.security.crypto.MasterKey
+import androidx.security.crypto.MasterKeys
 import com.example.BuildConfig
 import com.squareup.moshi.Json
 import com.squareup.moshi.Moshi
@@ -98,13 +98,12 @@ object GeminiClientProvider {
         val appContext = context.applicationContext
         prefs = appContext.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
         securePrefs = try {
-            val masterKey = MasterKey.Builder(appContext)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
+            // security-crypto 1.0.0 stable API (MasterKey.Builder exists only in 1.1.0+).
+            val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
             EncryptedSharedPreferences.create(
-                appContext,
                 SECURE_PREFS_NAME,
-                masterKey,
+                masterKeyAlias,
+                appContext,
                 EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
                 EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
             )
